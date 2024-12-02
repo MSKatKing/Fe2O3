@@ -1,0 +1,10 @@
+[package]
+name = "packet"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+num-traits = "0.2.19"
+shipyard = "0.7.4"
+uuid = "1.11.0"
+json = "0.12.4"

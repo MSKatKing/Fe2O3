@@ -1,0 +1,13 @@
+[package]
+name = "packet-proc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+packet = { path = "../packet" }
+quote = "1.0.37"
+serde = { version = "1.0.215", features = ["derive"] }
+syn = { version = "1.0", features = ["full"] }
+
+[lib]
+proc-macro = true
