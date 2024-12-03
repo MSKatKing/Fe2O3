@@ -1,13 +1,15 @@
+use std::convert::Into;
 use json::JsonValue;
-use shipyard::{AddComponent, Get, ViewMut};
+use shipyard::{AddComponent, Get, Remove, View, ViewMut};
 use fe2o3_nbt::NBT;
 use packet::{ByteArrayInferredLength, Identifier, VarInt};
-use packet_proc::{outgoing, packet, state_changing, Deserializable, Serializable};
+use packet_proc::{outgoing, packet, packet_handler, state_changing, Deserializable, Serializable};
+use text_component::{Component, TextColor};
 use crate::game::entities::player::{GameMode, MainHand, Player};
 use crate::game::Location;
-use crate::game::world::chunk::empty_heightmap;
+use crate::game::world::chunk::{Chunk, ChunkPosition};
 use crate::networking::chat::ChatSettings;
-use crate::networking::packet::{add_outgoing_packet, Bus, OutgoingPacket, PacketHandler};
+use crate::networking::packet::{add_outgoing_packet, Bus, OutgoingPacket};
 use crate::networking::packet::play::{ChunkDataAndUpdateLight, GameEvent, PlayLogin, PlayerAbilities};
 use crate::networking::player::{Connection, PlayerState};
 
@@ -22,25 +24,22 @@ pub struct ClientInformation {
     pub allow_server_listing: bool
 }
 
-impl PacketHandler for ClientInformation {
-    type Included<'a> = ViewMut<'a, Player>;
+#[packet_handler(ClientInformation)]
+fn handler(mut vm_self: ViewMut<ClientInformation>, mut vm_outgoing: ViewMut<Bus<OutgoingPacket>>, mut vm_connections: ViewMut<Connection>, mut vm_players: ViewMut<Player>) {
+    for (id, info) in vm_self.drain().with_id() {
+        let mut player = (&mut vm_connections).remove(id)
+            .expect("Connection should exist");
 
-    fn handler<'a>(mut vm_self: ViewMut<Self>, mut vm_outgoing: ViewMut<'a, Bus<OutgoingPacket>>, mut vm_connections: ViewMut<'a, Connection>, mut vm_players: Self::Included<'a>) {
-        for (id, info) in vm_self.drain().with_id() {
-            let mut player = (&mut vm_connections).get(id)
-                .expect("PlayerConnection should exist");
+        player.display_in_server_list = info.allow_server_listing;
+        player.chat_settings = info.chat_settings;
+        player.text_filtering = info.text_filtering;
 
-            player.display_in_server_list = info.allow_server_listing;
-            player.chat_settings = info.chat_settings;
-            player.text_filtering = info.text_filtering;
+        let mut player = Player::new(player.username.clone(), player.uuid, info.locale.clone(), info.main_hand, id, player);
+        player.update_view_distance(info.view_distance as u8);
 
-            let mut player = Player::new(player.username.clone(), player.uuid, info.locale.clone(), info.main_hand, id);
-            player.update_view_distance(info.view_distance as u8);
+        vm_players.add_component_unchecked(id, player);
 
-            vm_players.add_component_unchecked(id, player);
-
-            add_outgoing_packet(&mut vm_outgoing, id, FinishConfiguration);
-        }
+        add_outgoing_packet(&mut vm_outgoing, id, FinishConfiguration);
     }
 }
 
@@ -50,20 +49,17 @@ pub struct PluginMessage {
     pub data: ByteArrayInferredLength
 }
 
-impl PacketHandler for PluginMessage {
-    type Included<'a> = ViewMut<'a, Player>;
+#[packet_handler(PluginMessage)]
+fn handler(mut vm_self: ViewMut<PluginMessage>, mut vm_players: ViewMut<Player>) {
+    for (id, msg) in vm_self.drain().with_id() {
+        let mut player = (&mut vm_players).get(id)
+            .expect("Player should exist");
 
-    fn handler<'a>(mut vm_self: ViewMut<Self>, _: ViewMut<'a, Bus<OutgoingPacket>>, _: ViewMut<'a, Connection>, mut vm_players: Self::Included<'a>) {
-        for (id, msg) in vm_self.drain().with_id() {
-            let mut player = (&mut vm_players).get(id)
-                .expect("Player should exist");
-
-            if msg.channel.asset == "brand" {
-                tracing::debug!("Player brand is {}", msg.data.to_string());
-                player.update_brand(msg.data.to_string());
-            } else {
-                tracing::debug!("Received plugin message on channel {}", msg.channel);
-            }
+        if msg.channel.asset == "brand" {
+            tracing::debug!("Player brand is {}", msg.data.to_string());
+            player.update_brand(msg.data.to_string());
+        } else {
+            tracing::debug!("Received plugin message on channel {}", msg.channel);
         }
     }
 }
@@ -71,79 +67,93 @@ impl PacketHandler for PluginMessage {
 #[packet(3)]
 pub struct AcknowledgeFinishConfiguration;
 
+#[packet_handler(AcknowledgeFinishConfiguration)]
 #[state_changing]
-impl PacketHandler for AcknowledgeFinishConfiguration {
-    type Included<'a> = ViewMut<'a, Player>;
+fn handler(mut vm_self: ViewMut<AcknowledgeFinishConfiguration>, mut vm_outgoing: ViewMut<Bus<OutgoingPacket>>, mut vm_players: ViewMut<Player>) {
+    for (id, _) in vm_self.drain().with_id() {
+        let mut player = (&mut vm_players).get(id)
+            .expect("PlayerConnection should exist");
 
-    fn handler<'a>(mut vm_self: ViewMut<Self>, mut vm_outgoing: ViewMut<'a, Bus<OutgoingPacket>>, mut vm_connection: ViewMut<'a, Connection>, mut vm_players: Self::Included<'a>) {
-        for (id, _) in vm_self.drain().with_id() {
-            let mut player = (&mut vm_connection).get(id)
-                .expect("PlayerConnection should exist");
+        if player.connection.state != PlayerState::CONFIGURATION {
+            tracing::error!("Received AcknowledgeFinishConfiguration from player {} despite state not being configuration.", player.name());
+            continue;
+        }
 
-            if player.state != PlayerState::CONFIGURATION {
-                tracing::error!("Received AcknowledgeFinishConfiguration from player {} despite state not being configuration.", player.username);
-                continue;
+        player.connection.state = PlayerState::PLAY;
+
+        player.set_game_mode(GameMode::Creative);
+        add_outgoing_packet(&mut vm_outgoing, id, PlayLogin {
+            e_id: 0,
+            is_hardcore: false,
+            dimensions: vec![Identifier::new("minecraft", "overworld")],
+            max_players: VarInt(100),
+            view_distance: VarInt(player.actual_view_distance(100) as i32),
+            simulation_distance: VarInt(player.actual_view_distance(100) as i32),
+            reduced_debug_info: false,
+            enable_respawns: true,
+            limited_crafting: false,
+            dimension_type: VarInt::from(0),
+            dimension_name: Identifier::new("minecraft", "overworld"),
+            seed: 0,
+            game_mode: GameMode::Creative as u8,
+            previous_game_mode: -1,
+            is_debug: false,
+            is_flat: true,
+            death_location: None,
+            portal_cooldown: VarInt(0),
+            enforces_secure_chat: false,
+        });
+
+        add_outgoing_packet(&mut vm_outgoing, id, PlayerAbilities::default());
+
+        let chunk = Chunk::flat_generation();
+
+        for x in -3..3 {
+            for z in -3..3 {
+                add_outgoing_packet::<ChunkDataAndUpdateLight>(&mut vm_outgoing, id, (&ChunkPosition { x, z }, &chunk).into())
             }
+        }
 
-            player.state = PlayerState::PLAY;
+        player.teleport(Location::new(0.0, 0.0, 0.0));
+        add_outgoing_packet(&mut vm_outgoing, id, GameEvent {
+            event: 13,
+            value: 0.0
+        })
+    }
+}
 
-            let mut player = (&mut vm_players).get(id)
-                .expect("Player should exist");
+#[packet(0x05)]
+pub struct ConfigurationPong {
+    id: i32
+}
 
-            add_outgoing_packet(&mut vm_outgoing, id, PlayLogin {
-                e_id: 0,
-                is_hardcore: false,
-                dimensions: vec![Identifier::new("minecraft", "overworld")],
-                max_players: VarInt(100),
-                view_distance: VarInt(player.actual_view_distance(100) as i32),
-                simulation_distance: VarInt(player.actual_view_distance(100) as i32),
-                reduced_debug_info: false,
-                enable_respawns: true,
-                limited_crafting: false,
-                dimension_type: VarInt::from(0),
-                dimension_name: Identifier::new("minecraft", "overworld"),
-                seed: 0,
-                game_mode: GameMode::Creative as u8,
-                previous_game_mode: -1,
-                is_debug: false,
-                is_flat: true,
-                death_location: None,
-                portal_cooldown: VarInt(0),
-                enforces_secure_chat: false,
-            });
+#[packet_handler(ConfigurationPong)]
+fn handle(mut vm_self: ViewMut<ConfigurationPong>, mut vm_players: ViewMut<Player>, v_connection: View<Connection>) {
+    for (id, info) in vm_self.drain().with_id() {
+        let mut player = (&mut vm_players).get(id)
+            .expect("Player should exist");
 
-            add_outgoing_packet(&mut vm_outgoing, id, PlayerAbilities::default());
-            
-            for x in -3..3 {
-                for z in -3..3 {
-                    add_outgoing_packet(&mut vm_outgoing, id, ChunkDataAndUpdateLight {
-                        x,
-                        z,
-                        heightmaps: empty_heightmap(),
-                        data: vec![],
-                        block_entities: vec![],
-                        sky_light_mask: vec![],
-                        block_light_mask: vec![],
-                        empty_sky_light_mask: vec![],
-                        empty_block_light_mask: vec![],
-                        sky_light_array: vec![],
-                        block_light_array: vec![],
-                    })
-                }
-            }
-
-            player.teleport(Location::new(0.0, 0.0, 0.0));
-            add_outgoing_packet(&mut vm_outgoing, id, GameEvent {
-                event: 13,
-                value: 0.0
-            })
+        if info.id != player.last_keep_alive_id {
+            player.kick(text_component::Component::new_with_color("Ping response id was not the same as the sent request's id!", TextColor::Red))
         }
     }
+}
+
+#[packet(0x02)]
+#[outgoing]
+pub struct ConfigurationDisconnect {
+    pub component: Component
 }
 
 #[packet(3)]
 #[outgoing]
 pub struct FinishConfiguration;
+
+#[packet(0x05)]
+#[outgoing]
+pub struct ConfigurationPing {
+    pub id: i32
+}
 
 #[packet(0x07)]
 #[outgoing]

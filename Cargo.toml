@@ -4,12 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = ["fe2o3_nbt", "packet", "packet-proc","shipyard-bus", "text-component"]
+members = ["fe2o3_nbt", "mem-helper", "packet", "packet-proc","shipyard-bus", "text-component"]
 
 [dependencies]
-bimap = "0.6.3"
-crossbeam-channel = "0.5.13"
-num-traits = "0.2.19"
 shipyard = "0.7.4"
 uuid = "1.11.0"
 packet = { path = "packet" }
@@ -23,3 +20,4 @@ toml = "0.8.19"
 fe2o3_nbt = { path = "fe2o3_nbt" }
 flate2 = "1.0.35"
 text-component = { path = "text-component" }
+mem-helper = { path = "mem-helper" }

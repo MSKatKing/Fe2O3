@@ -1,8 +1,9 @@
 use shipyard::{Get, ViewMut};
 use uuid::Uuid;
 use packet::{ByteArrayInferredLength, Identifier, VarInt};
-use packet_proc::{outgoing, packet, state_changing};
-use crate::networking::packet::{add_outgoing_packet, Bus, OutgoingPacket, PacketHandler};
+use packet_proc::{outgoing, packet, packet_handler, state_changing};
+use text_component::Component;
+use crate::networking::packet::{add_outgoing_packet, Bus, OutgoingPacket};
 use crate::networking::packet::configuration::RegistryData;
 use crate::networking::player::{Connection, PlayerState};
 
@@ -12,34 +13,31 @@ pub struct LoginStart {
     pub uuid: Uuid
 }
 
-impl PacketHandler for LoginStart {
-    type Included<'a> = ();
+#[packet_handler(LoginStart)]
+fn handler(mut vm_self: ViewMut<LoginStart>, mut vm_outgoing: ViewMut<Bus<OutgoingPacket>>, mut vm_players: ViewMut<Connection>) {
+    for (id, login_start) in vm_self.drain().with_id() {
+        let username = login_start.name;
+        let uuid = login_start.uuid;
 
-    fn handler<'a>(mut vm_self: ViewMut<Self>, mut vm_outgoing: ViewMut<'a, Bus<OutgoingPacket>>, mut vm_players: ViewMut<'a, Connection>, _: Self::Included<'a>) {
-        for (id, login_start) in vm_self.drain().with_id() {
-            let username = login_start.name;
-            let uuid = login_start.uuid;
+        let mut player = (&mut vm_players).get(id)
+            .expect("PlayerConnection should exist");
 
-            let mut player = (&mut vm_players).get(id)
-                .expect("PlayerConnection should exist");
+        player.username = username.clone();
+        player.uuid = uuid;
 
-            player.username = username.clone();
-            player.uuid = uuid;
+        tracing::info!("UUID of player {} is {}.", username, uuid);
 
-            tracing::info!("UUID of player {} is {}.", username, uuid);
+        player.compression_settings = Some(50);
 
-            player.compression_settings = Some(50);
-
-            add_outgoing_packet(&mut vm_outgoing, id, SetCompression {
-                threshold: VarInt(50),
-            });
-            add_outgoing_packet(&mut vm_outgoing, id, LoginSuccess {
-                uuid,
-                username,
-                properties: vec![],
-                strict_error_handling: false,
-            });
-        }
+        add_outgoing_packet(&mut vm_outgoing, id, SetCompression {
+            threshold: VarInt(50),
+        });
+        add_outgoing_packet(&mut vm_outgoing, id, LoginSuccess {
+            uuid,
+            username,
+            properties: vec![],
+            strict_error_handling: false,
+        });
     }
 }
 
@@ -59,32 +57,29 @@ pub struct LoginPluginResponse {
 #[packet(3)]
 pub struct LoginAcknowledged;
 
+#[packet_handler(LoginAcknowledged)]
 #[state_changing]
-impl PacketHandler for LoginAcknowledged {
-    type Included<'a> = ();
+fn handler(mut vm_self: ViewMut<LoginAcknowledged>, mut vm_outgoing: ViewMut<Bus<OutgoingPacket>>, mut vm_players: ViewMut<Connection>) {
+    for (id, _) in vm_self.drain().with_id() {
+        let mut player = (&mut vm_players).get(id)
+            .expect("PlayerConnection should exist");
 
-    fn handler<'a>(mut vm_self: ViewMut<Self>, mut vm_outgoing: ViewMut<'a, Bus<OutgoingPacket>>, mut vm_players: ViewMut<'a, Connection>, _: Self::Included<'a>) {
-        for (id, _) in vm_self.drain().with_id() {
-            let mut player = (&mut vm_players).get(id)
-                .expect("PlayerConnection should exist");
-
-            if player.state != PlayerState::LOGIN {
-                tracing::error!("Received a LoginAcknowledged packet but the player was not in the Login state");
-                continue;
-            }
-
-            player.state = PlayerState::CONFIGURATION;
-
-            add_outgoing_packet(&mut vm_outgoing, id, RegistryData::new(json::parse(include_str!("../../resources/registry/dimension_type.json"))));
-            add_outgoing_packet(&mut vm_outgoing, id, RegistryData::new(json::parse(include_str!("../../resources/registry/biomes.json"))));
-            add_outgoing_packet(&mut vm_outgoing, id, RegistryData::new(json::parse(include_str!("../../resources/registry/wolf_variant.json"))));
-            add_outgoing_packet(&mut vm_outgoing, id, RegistryData::new(json::parse(include_str!("../../resources/registry/painting_variant.json"))));
-            add_outgoing_packet(&mut vm_outgoing, id, RegistryData::new(json::parse(include_str!("../../resources/registry/damage_type.json"))));
-            add_outgoing_packet(&mut vm_outgoing, id, RegistryData::new(json::parse(include_str!("../../resources/registry/banner_pattern.json"))));
-            add_outgoing_packet(&mut vm_outgoing, id, RegistryData::new(json::parse(include_str!("../../resources/registry/chat_type.json"))));
-            add_outgoing_packet(&mut vm_outgoing, id, RegistryData::new(json::parse(include_str!("../../resources/registry/trim_material.json"))));
-            add_outgoing_packet(&mut vm_outgoing, id, RegistryData::new(json::parse(include_str!("../../resources/registry/trim_pattern.json"))));
+        if player.state != PlayerState::LOGIN {
+            tracing::error!("Received a LoginAcknowledged packet but the player was not in the Login state");
+            continue;
         }
+
+        player.state = PlayerState::CONFIGURATION;
+
+        add_outgoing_packet(&mut vm_outgoing, id, RegistryData::new(json::parse(include_str!("../../resources/registry/dimension_type.json"))));
+        add_outgoing_packet(&mut vm_outgoing, id, RegistryData::new(json::parse(include_str!("../../resources/registry/biomes.json"))));
+        add_outgoing_packet(&mut vm_outgoing, id, RegistryData::new(json::parse(include_str!("../../resources/registry/wolf_variant.json"))));
+        add_outgoing_packet(&mut vm_outgoing, id, RegistryData::new(json::parse(include_str!("../../resources/registry/painting_variant.json"))));
+        add_outgoing_packet(&mut vm_outgoing, id, RegistryData::new(json::parse(include_str!("../../resources/registry/damage_type.json"))));
+        add_outgoing_packet(&mut vm_outgoing, id, RegistryData::new(json::parse(include_str!("../../resources/registry/banner_pattern.json"))));
+        add_outgoing_packet(&mut vm_outgoing, id, RegistryData::new(json::parse(include_str!("../../resources/registry/chat_type.json"))));
+        add_outgoing_packet(&mut vm_outgoing, id, RegistryData::new(json::parse(include_str!("../../resources/registry/trim_material.json"))));
+        add_outgoing_packet(&mut vm_outgoing, id, RegistryData::new(json::parse(include_str!("../../resources/registry/trim_pattern.json"))));
     }
 }
 
@@ -97,7 +92,7 @@ pub struct LoginCookieResponse {
 #[packet(0x00)]
 #[outgoing]
 pub struct LoginDisconnect {
-
+    pub component: Component
 }
 
 #[packet(0x01)]

@@ -1,8 +1,6 @@
 use std::thread;
 use std::time::{Duration, Instant};
-use crossbeam_channel::Receiver;
 use shipyard::World;
-use crate::async_task::AsyncTask;
 use crate::status_tags::Shutdown;
 use crate::workloads;
 
@@ -54,23 +52,16 @@ impl Application {
                 thread::sleep(remaining_time);
             } else {
                 let over_time = tick_duration - TARGET_TICK_DURATION;
-                tracing::warn!("Warning: Server overloaded! {}ms behind!", over_time.as_millis());
+                let over_time_ticks = (over_time.as_millis() / TARGET_TICK_DURATION.as_millis()).max(1);
+
+                // TODO: change this to an option in the config
+                if over_time_ticks > 10 {
+                    tracing::warn!("Server overloaded! {} tick(s) ({}ms) behind!", over_time_ticks, over_time.as_millis());
+                }
             }
         }
 
         self.ecs_world.run_workload(workloads::shutdown)
             .expect("Failed to run workload shutdown");
-    }
-
-    fn async_run(rx: Receiver<AsyncTask>) {
-        let mut handlers = Vec::new();
-
-        while let Ok(task) = rx.recv() {
-            handlers.push(thread::spawn(task));
-        }
-
-        for handler in handlers {
-            handler.join().unwrap_or_default()
-        }
     }
 }

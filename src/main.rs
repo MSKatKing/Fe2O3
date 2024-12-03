@@ -3,7 +3,6 @@
 mod application;
 mod workloads;
 mod status_tags;
-mod async_task;
 mod networking;
 mod game;
 mod settings;

@@ -20,4 +20,8 @@ impl HeightMap {
     pub fn set_height(&mut self, x: i32, z: i32, height: i32) {
         self.data[(z * 16 + x) as usize] = height;
     }
+
+    pub fn get_height(&self, x: i32, z: i32) -> i32 {
+        self.data[(z * 16 + x) as usize]
+    }
 }

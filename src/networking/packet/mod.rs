@@ -126,12 +126,6 @@ impl<T: Send + Sync> Default for Bus<T> {
     }
 }
 
-pub trait PacketHandler: Component {
-    type Included<'a>;
-
-    fn handler<'a>(vm_self: ViewMut<Self>, vm_outgoing: ViewMut<'a, Bus<OutgoingPacket>>, vm_connections: ViewMut<'a, Connection>, included: Self::Included<'a>);
-}
-
 add_packet_fn! {
     HANDSHAKE => "src::networking::packet::handshake",
     LOGIN => "src::networking::packet::login",

@@ -6,7 +6,9 @@ pub use tag::NBTTag;
 
 #[macro_export]
 macro_rules! compound_nbt {
-    ($($name:expr => $tag:expr),* $(,)?) => {
+    ($($name:expr => $tag:expr),* $(,)?) => {{
+        use fe2o3_nbt::NBTTag;
+
         NBTTag::Compound(
             vec![
                 $(
@@ -14,7 +16,8 @@ macro_rules! compound_nbt {
                 )*
             ]
         )
-    };
+
+    }};
 }
 
 #[macro_export]
