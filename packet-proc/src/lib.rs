@@ -1,9 +1,11 @@
+mod handlers;
+
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, ItemStruct, AttributeArgs, NestedMeta, Lit, Fields, Token, Ident, LitStr, DeriveInput};
-use syn::__private::str;
+use syn::{parse_macro_input, ItemStruct, AttributeArgs, NestedMeta, Lit, Fields, Token, Ident, LitStr, DeriveInput, ItemFn};
 use syn::parse::ParseStream;
 use syn::punctuated::Punctuated;
+use crate::handlers::list_handlers_in_module;
 
 #[proc_macro_attribute]
 pub fn outgoing(_: TokenStream, item: TokenStream) -> TokenStream {
@@ -13,6 +15,34 @@ pub fn outgoing(_: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn state_changing(_: TokenStream, item: TokenStream) -> TokenStream {
     item
+}
+
+#[proc_macro_attribute]
+pub fn packet_handler(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(item as ItemFn);
+    let attr = parse_macro_input!(attr as AttributeArgs);
+
+    if let Some(struct_name) = attr.first() {
+        let inputs = &item.sig.inputs;
+        let block = &item.block;
+
+        let state_changing = if item.attrs.iter().any(|attr| attr.path.is_ident("state_changing")) {
+            quote!(#[state_changing])
+        } else {
+            quote!()
+        };
+
+        quote! {
+            impl #struct_name {
+                #state_changing
+                pub(crate) fn __generated_packet_handler(#inputs) #block
+            }
+        }
+    } else {
+        quote! {
+            #item
+        }
+    }.into()
 }
 
 #[proc_macro_derive(Serializable)]
@@ -138,55 +168,6 @@ fn list_structs_in_module(module_path: &str) -> Vec<Ident> {
         .collect()
 }
 
-fn list_structs_with_trait(module_path: &str, trait_name: &str) -> Vec<(bool, Ident)> {
-    let source_path = format!("{}.rs", module_path.replace("::", "/"));
-    let file_content = std::fs::read_to_string(&source_path).expect("Failed to read module");
-    let syntax = syn::parse_file(&file_content).expect("Failed to parse module file");
-
-    let mut structs = Vec::new();
-
-    for item in syntax.items.iter() {
-        if let syn::Item::Struct(s) = item {
-            let struct_name = &s.ident;
-
-            let mut is_state_changing = false;
-
-            if syntax.items.iter().any(|item| {
-                if let syn::Item::Impl(impl_block) = item {
-                    is_state_changing = impl_block.attrs.iter().any(|attr| attr.path.is_ident("state_changing"));
-
-                    impl_block.trait_.as_ref().map_or(false, |(_, path, _)| {
-                        path.segments.last().map_or(false, |segment| {
-                            segment.ident == trait_name
-                        })
-                    }) && {
-                        let value = impl_block.self_ty.as_ref();
-                        quote!(#value).to_string()
-                    } == {
-                        let value = &syn::Type::Path(syn::TypePath {
-                            qself: None,
-                            path: syn::Path {
-                                leading_colon: None,
-                                segments: vec![syn::PathSegment {
-                                    ident: struct_name.clone(),
-                                    arguments: syn::PathArguments::None,
-                                }].into_iter().collect()
-                            },
-                        });
-                        quote!(#value).to_string()
-                    }
-                } else {
-                    false
-                }
-            }) {
-                structs.push((is_state_changing, struct_name.clone()));
-            }
-        }
-    }
-
-    structs
-}
-
 #[proc_macro]
 pub fn add_packet_fn(input: TokenStream) -> TokenStream {
     let RegistryInput { mappings } = parse_macro_input!(input as RegistryInput);
@@ -199,11 +180,11 @@ pub fn add_packet_fn(input: TokenStream) -> TokenStream {
         let state = mapping.state;
         let module_path = mapping.module.value();
         let structs = list_structs_in_module(&module_path);
-        let impl_trait = list_structs_with_trait(&module_path, "PacketHandler");
+        let handler = list_handlers_in_module(&module_path);
 
-        for (is_state_changing, item) in impl_trait {
-            handler_fns.push((is_state_changing, quote!{
-                #item::handler
+        for (is_state_changing, struct_name) in handler {
+            handler_fns.push((is_state_changing, quote! {
+                #struct_name::__generated_packet_handler
             }))
         }
 
@@ -265,16 +246,30 @@ pub fn add_packet_fn(input: TokenStream) -> TokenStream {
         }.push(func);
     }
 
-    let output = quote! {
-        #output
+    let output = if state_changing_fns.is_empty() {
+        quote! {
+            #output
 
-        pub fn packet_handlers() -> shipyard::Workload {
-            use shipyard::IntoWorkload;
-            (
-                #(#state_changing_fns),*,
-                evaluate_unprocessed_packets,
-                #(#non_state_changing_fns),*
-            ).into_sequential_workload()
+            pub fn packet_handlers() -> shipyard::Workload {
+                use shipyard::IntoWorkload;
+                (
+                    evaluate_unprocessed_packets,
+                    #(#non_state_changing_fns),*
+                ).into_sequential_workload()
+            }
+        }
+    } else {
+        quote! {
+            #output
+
+            pub fn packet_handlers() -> shipyard::Workload {
+                use shipyard::IntoWorkload;
+                (
+                    #(#state_changing_fns),*,
+                    evaluate_unprocessed_packets,
+                    #(#non_state_changing_fns),*
+                ).into_sequential_workload()
+            }
         }
     };
 

@@ -4,7 +4,6 @@ use crate::game::entities::EntityManager;
 use crate::game::world::chunk::ChunkManager;
 
 pub mod chunk;
-mod heightmap;
 mod block;
 
 #[derive(Unique)]

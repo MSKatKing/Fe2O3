@@ -33,6 +33,7 @@ pub fn tick() -> Workload {
         packet_handlers, // Handle packets
 
         handle_teleport_requests,
+        handle_keep_alives,
 
         handle_networking_outgoing,
     ).into_sequential_workload()

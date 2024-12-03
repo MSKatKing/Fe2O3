@@ -91,6 +91,12 @@ impl Identifier {
     }
 }
 
+impl From<&str> for Identifier {
+    fn from(value: &str) -> Self {
+        Self::new("minecraft", value)
+    }
+}
+
 impl Serializable for Identifier {
     fn serialize(self, buffer: &mut Buffer) {
         buffer.write(format!("{}:{}", self.namespace, self.asset));

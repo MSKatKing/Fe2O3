@@ -1,12 +1,12 @@
 use shipyard::{Component, Get, ViewMut};
 use fe2o3_nbt::NBT;
 use packet::{Identifier, VarInt};
-use packet_proc::{outgoing, packet, Deserializable, Serializable};
+use packet_proc::{outgoing, packet, packet_handler, Deserializable, Serializable};
+use text_component::TextColor;
 use crate::game::entities::DeathLocation;
 use crate::game::entities::player::Player;
 use crate::game::Location;
-use crate::networking::packet::{add_outgoing_packet, Bus, OutgoingPacket, PacketHandler};
-use crate::networking::player::Connection;
+use crate::networking::packet::{add_outgoing_packet, Bus, OutgoingPacket};
 
 #[packet(0x00)]
 pub struct ConfirmTeleportation {
@@ -21,20 +21,17 @@ pub struct SetPlayerPosition {
     pub on_ground: bool,
 }
 
-impl PacketHandler for SetPlayerPosition {
-    type Included<'a> = ViewMut<'a, Player>;
+#[packet_handler(SetPlayerPosition)]
+fn handler(mut vm_self: ViewMut<SetPlayerPosition>, mut vm_players: ViewMut<Player>) {
+    for (id, packet) in vm_self.drain().with_id() {
+        let mut player = (&mut vm_players).get(id)
+            .expect("Player should exist");
 
-    fn handler<'a>(mut vm_self: ViewMut<Self>, _: ViewMut<'a, Bus<OutgoingPacket>>, _: ViewMut<'a, Connection>, mut vm_players: Self::Included<'a>) {
-        for (id, packet) in vm_self.drain().with_id() {
-            let mut player = (&mut vm_players).get(id)
-                .expect("Player should exist");
+        let mut location = Location::from(packet);
+        location.set_yaw(player.yaw());
+        location.set_pitch(player.pitch());
 
-            let mut location = Location::from(packet);
-            location.yaw = player.yaw();
-            location.pitch = player.pitch();
-
-            player.move_absolute(location);
-        }
+        player.move_absolute(location);
     }
 }
 
@@ -43,14 +40,34 @@ pub struct PingRequest {
     payload: u64
 }
 
-impl PacketHandler for PingRequest {
-    type Included<'a> = ();
+#[packet_handler(PingRequest)]
+fn handler(mut vm_self: ViewMut<PingRequest>, mut vm_outgoing: ViewMut<Bus<OutgoingPacket>>) {
+    for (id, ping) in vm_self.drain().with_id() {
+        add_outgoing_packet(&mut vm_outgoing, id, PingResponse { payload: ping.payload });
+    }
+}
 
-    fn handler<'a>(mut vm_self: ViewMut<Self>, mut vm_outgoing: ViewMut<'a, Bus<OutgoingPacket>>, _: ViewMut<'a, Connection>, _: Self::Included<'a>) {
-        for (id, ping) in vm_self.drain().with_id() {
-            add_outgoing_packet(&mut vm_outgoing, id, PingResponse { payload: ping.payload });
+#[packet(0x27)]
+pub struct PlayPong {
+    id: i32
+}
+
+#[packet_handler(PlayPong)]
+fn handler(mut vm_self: ViewMut<PlayPong>, mut vm_players: ViewMut<Player>) {
+    for (id, pong) in vm_self.drain().with_id() {
+        let mut player = (&mut vm_players).get(id)
+            .expect("Player should exist");
+
+        if pong.id != player.last_keep_alive_id {
+            player.kick(text_component::Component::new_with_color("Ping response id was not the same as the sent request's id!", TextColor::Red))
         }
     }
+}
+
+#[packet(0x1D)]
+#[outgoing]
+pub struct PlayDisconnect {
+    pub component: text_component::Component
 }
 
 #[packet(0x22)]
@@ -100,6 +117,12 @@ pub struct PlayLogin {
     pub enforces_secure_chat: bool
 }
 
+#[packet(0x35)]
+#[outgoing]
+pub struct PlayPing {
+    pub id: i32
+}
+
 #[packet(0x36)]
 #[outgoing]
 pub struct PingResponse {
@@ -125,6 +148,7 @@ impl Default for PlayerAbilities {
 }
 
 #[packet(0x3E)]
+#[allow(private_interfaces)]
 #[outgoing]
 pub struct PlayerInfoUpdate {
     pub actions: u8,
@@ -135,25 +159,6 @@ pub struct PlayerInfoUpdate {
 struct PlayerProperties {
     name: String,
     number_of_properties: VarInt,
-}
-
-impl PlayerInfoUpdate {
-    pub fn empty() -> Self {
-        Self {
-            actions: 0,
-            players: vec![]
-        }
-    }
-
-    pub fn for_current_player(player: &Player) -> Self {
-        Self {
-            actions: 0x01,
-            players: vec![PlayerProperties {
-                name: player.name().clone(),
-                number_of_properties: VarInt(0),
-            }]
-        }
-    }
 }
 
 #[packet(0x40)]
@@ -177,11 +182,11 @@ pub struct TeleportID {
 impl SynchronizePlayerPosition {
     pub fn new(location: &Location, teleport_id: TeleportID) -> Self {
         Self {
-            x: location.x,
-            y: location.y,
-            z: location.z,
-            yaw: location.yaw,
-            pitch: location.pitch,
+            x: location.x(),
+            y: location.y(),
+            z: location.z(),
+            yaw: location.yaw(),
+            pitch: location.pitch(),
             flags: 0,
             teleport_id,
         }
