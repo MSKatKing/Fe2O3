@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = ["fe2o3_nbt", "mem-helper", "packet", "packet-proc","shipyard-bus", "text-component"]
+members = ["fe2o3_nbt", "mem-helper", "packet", "packet-proc", "text-component"]
 
 [dependencies]
 shipyard = "0.7.5"

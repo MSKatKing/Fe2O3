@@ -124,7 +124,7 @@ pub fn handle_networking_outgoing(mut vm_outgoing: ViewMut<Bus<OutgoingPacket>>,
         let mut borrowed_connection = (&mut vm_connections).get(id);
         let mut borrowed_player = (&mut vm_players).get(id);
 
-        let mut player: &mut Connection;
+        let player: &mut Connection;
 
         if let Ok(ref mut connection) = &mut borrowed_connection {
             player = connection;
@@ -187,59 +187,14 @@ pub fn handle_networking_outgoing(mut vm_outgoing: ViewMut<Bus<OutgoingPacket>>,
     }
 }
 
-pub fn handle_unsent_player_packets(mut vm_players: ViewMut<Player>) {
-    for player_ in (&mut vm_players).iter() {
-        let player = &mut player_.connection;
+pub fn handle_unsent_player_packets(mut vm_players: ViewMut<Player>, mut vm_outgoing: ViewMut<Bus<OutgoingPacket>>) {
+    for (id, player) in (&mut vm_players).iter().with_id() {
+        let mut outgoing = (&mut vm_outgoing).get_or_insert_with(id, Bus::default)
+            .expect("Bus should exist");
 
-        for p in player_.unprocessed_packets.drain(..) {
-            if player.compression_settings.is_some() && !(p.id == 0x03 && player.state == PlayerState::LOGIN) {
-                if p.cursor >= player.compression_settings.unwrap() as usize {
-                    let mut compressed = Buffer::new();
-                    compressed.write(VarInt(p.id as i32));
-                    compressed.write(p.deref().buffer.as_slice());
-
-                    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-                    encoder.write_all(compressed.buffer.as_slice()).unwrap();
-
-                    let mut out = Buffer::new();
-                    out.write(VarInt(compressed.cursor as i32));
-                    out.write(encoder.finish().unwrap().as_slice());
-
-                    let mut b = Buffer::new();
-                    b.write(out.buffer);
-
-                    player.stream.write_all(&b.buffer)
-                        .expect("Failed to write to stream");
-                } else {
-                    let mut out = Buffer::new();
-                    out.write(VarInt(0));
-                    out.write(VarInt(p.id as i32));
-                    out.write(p.deref().buffer.as_slice());
-
-                    let mut b = Buffer::new();
-                    b.write(out.buffer);
-
-                    player.stream.write_all(&b.buffer)
-                        .expect("Failed to write to stream");
-                }
-            } else {
-                let mut new_buffer = Buffer::new();
-                new_buffer.write(VarInt(p.id as i32));
-
-                let length = new_buffer.cursor + p.buffer.cursor;
-                let mut new_buffer = Buffer::new();
-                new_buffer.write(VarInt(length as i32));
-                new_buffer.write(VarInt(p.id as i32));
-                new_buffer.buffer.write_all(&p.buffer.buffer[..p.buffer.cursor])
-                    .unwrap();
-                new_buffer.cursor += p.buffer.cursor;
-
-                player.stream.write_all(&new_buffer.buffer)
-                    .expect("Failed to write to stream");
-            }
+        for p in player.unprocessed_packets.drain(..) {
+            outgoing.push(p);
         }
-
-        player.stream.flush().expect("Failed to flush player stream");
     }
 }
 

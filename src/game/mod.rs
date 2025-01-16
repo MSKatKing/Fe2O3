@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use std::ops::Add;
 use mem_helper::{ToF64, ToU64};
 use crate::networking::packet::play::SetPlayerPosition;
@@ -28,9 +29,9 @@ impl Location {
 
     pub fn relative(&self, other: &Location) -> Location {
         Location {
-            x: (other.x.transmute_to_f64() - self.x.transmute_to_f64()).transmute_to_u64(),
-            y: (other.y.transmute_to_f64() - self.y.transmute_to_f64()).transmute_to_u64(),
-            z: (other.z.transmute_to_f64() - self.z.transmute_to_f64()).transmute_to_u64(),
+            x: (other.x() - self.x()).transmute_to_u64(),
+            y: (other.y() - self.y()).transmute_to_u64(),
+            z: (other.z() - self.z()).transmute_to_u64(),
             yaw: other.yaw - self.yaw,
             pitch: other.pitch - self.pitch
         }
@@ -80,11 +81,17 @@ impl Add<&Location> for &Location {
 
     fn add(self, rhs: &Location) -> Self::Output {
         Location {
-            x: self.x + rhs.x,
-            y: self.y + rhs.y,
-            z: self.z + rhs.z,
-            yaw: self.yaw + rhs.yaw,
-            pitch: self.pitch + rhs.pitch,
+            x: (self.x() + rhs.x()).transmute_to_u64(),
+            y: (self.y() + rhs.y()).transmute_to_u64(),
+            z: (self.z() + rhs.z()).transmute_to_u64(),
+            yaw: (self.yaw() + rhs.yaw()) as u32,
+            pitch: (self.pitch() + rhs.pitch()) as u32,
         }
+    }
+}
+
+impl Display for Location {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {}, {})", self.x(), self.y(), self.z())
     }
 }

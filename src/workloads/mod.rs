@@ -4,6 +4,7 @@ mod tick;
 
 use shipyard::{IntoWorkload, Workload};
 use crate::networking::packet::packet_handlers;
+use crate::plugins::plugin_update_workloads;
 
 pub fn startup() -> Workload {
     use startup::*;
@@ -35,6 +36,10 @@ pub fn tick() -> Workload {
         handle_teleport_requests,
         handle_keep_alives,
 
+        handle_unsent_player_packets,
+
         handle_networking_outgoing,
+
+        plugin_update_workloads,
     ).into_sequential_workload()
 }

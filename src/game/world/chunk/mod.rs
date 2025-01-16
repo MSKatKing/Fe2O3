@@ -60,7 +60,7 @@ impl Chunk {
         }
 
         let section = y / 16;
-        self.chunk_sections[section as usize].set_block(pos, block);
+        self.chunk_sections[section as usize].set_block(Location::new(pos.x(), (y % 16) as f64, pos.z()), block);
     }
 
     pub fn get_heightmap_nbt(&self, network: bool) -> NBT {

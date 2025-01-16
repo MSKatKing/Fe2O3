@@ -49,7 +49,7 @@ impl Into<Vec<u8>> for &ChunkSection {
             for x in 0..16 {
                 for y in 0..16 {
                     for z in 0..16 {
-                        blocks.push(*self.blocks.get(&Location::new(x as f64, y as f64, z as f64)).unwrap_or(&0) as i32);
+                        blocks.push(*self.blocks.get(&Location::new(y as f64, x as f64, z as f64)).unwrap_or(&0) as i32);
                     }
                 }
             }

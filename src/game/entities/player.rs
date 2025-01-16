@@ -1,18 +1,23 @@
+use std::collections::HashSet;
 use std::random::random;
 use std::time::Instant;
 use shipyard::{Component, EntityId, ViewMut};
 use uuid::Uuid;
+use fe2o3_nbt::NBT;
 use packet::{Buffer, Deserializable, Packet, Serializable, VarInt};
+use crate::game::entities::{Disconnectable, Entity, Nameable, Positionable};
 use crate::game::Location;
+use crate::game::world::chunk::{Chunk, ChunkPosition};
 use crate::networking::packet::{add_outgoing_packet, Bus, OutgoingPacket};
 use crate::networking::packet::configuration::{ConfigurationDisconnect, ConfigurationPing};
 use crate::networking::packet::login::LoginDisconnect;
-use crate::networking::packet::play::{PlayDisconnect, PlayPing, TeleportID};
+use crate::networking::packet::play::{ChunkDataAndUpdateLight, PlayDisconnect, PlayPing, SetCenterChunk, TeleportID, UnloadChunk};
 use crate::networking::player::{Connection, PlayerState};
 
 #[derive(Component)]
 pub struct Player {
     username: String,
+    display_name: String,
     uuid: Uuid,
     brand: String,
 
@@ -25,6 +30,8 @@ pub struct Player {
     game_mode: GameMode,
 
     location: Location,
+    chunk_x: i32,
+    chunk_z: i32,
 
     pub connection: Connection,
 
@@ -40,7 +47,8 @@ pub struct Player {
 impl Player {
     pub fn new(username: String, uuid: Uuid, locale: String, main_hand: MainHand, e_id: EntityId, connection: Connection) -> Self {
         Self {
-            username,
+            username: username.clone(),
+            display_name: username,
             uuid,
             e_id,
             view_distance: 0,
@@ -48,6 +56,8 @@ impl Player {
             main_hand,
             game_mode: GameMode::default(),
             location: Location::new(0.0, 0.0, 0.0),
+            chunk_x: 0,
+            chunk_z: 0,
             brand: "".to_string(),
             teleport_requests: vec![],
             last_keep_alive: Instant::now(),
@@ -73,10 +83,6 @@ impl Player {
         &self.brand
     }
 
-    pub fn teleport(&mut self, location: Location) {
-        self.teleport_requests.push((TeleportID { id: VarInt(random()) }, location, true));
-    }
-
     pub fn teleport_acknowledge(&mut self, teleport_id: TeleportID) {
         if let Some((id, _)) = self.teleport_requests.iter().enumerate().find(|(_, (id, _, unsent))| id.id == teleport_id.id && !unsent) {
             let (_, new_location, _) = self.teleport_requests.remove(id);
@@ -86,51 +92,11 @@ impl Player {
         }
     }
 
-    pub fn move_relative(&mut self, new_location: Location) {
-        if (new_location.magnitude() >= 0.25) && !(self.game_mode == GameMode::Spectator || self.game_mode == GameMode::Creative) {
-            tracing::warn!("Player {} ({}) moved too quickly! (x: {}, y: {}, z: {})", self.username, self.uuid, new_location.x(), new_location.y(), new_location.z());
-            self.teleport(new_location);
-        } else {
-            self.location = new_location;
-        }
-    }
-
-    pub fn move_absolute(&mut self, new_location: Location) {
-        self.move_relative(self.location.relative(&new_location))
-    }
-
-    pub fn yaw(&self) -> f32 {
-        self.location.yaw()
-    }
-
-    pub fn pitch(&self) -> f32 {
-        self.location.pitch()
-    }
-
-    pub fn name(&self) -> &String {
-        &self.username
-    }
-
     fn add_packet<T: Packet>(&mut self, packet: T) {
         self.unprocessed_packets.push(OutgoingPacket {
             id: packet.get_id(),
             buffer: packet.into_buffer()
         });
-    }
-
-    pub fn kick(&mut self, component: text_component::Component) {
-        match self.connection.state {
-            PlayerState::LOGIN => {
-                self.add_packet(LoginDisconnect { component })
-            },
-            PlayerState::CONFIGURATION => {
-                self.add_packet(ConfigurationDisconnect { component })
-            },
-            PlayerState::PLAY => {
-                self.add_packet(PlayDisconnect { component })
-            }
-            _ => {}
-        }
     }
 
     pub fn send_keep_alive(&mut self, vm_outgoing: &mut ViewMut<Bus<OutgoingPacket>>) {
@@ -153,6 +119,124 @@ impl Player {
     pub fn set_game_mode(&mut self, game_mode: GameMode) {
         self.game_mode = game_mode;
     }
+}
+
+impl Positionable for Player {
+    fn position(&self) -> &Location {
+        &self.location
+    }
+
+    fn move_relative(&mut self, relative: Location) {
+        if (relative.magnitude() >= 0.25) && !(self.game_mode == GameMode::Spectator || self.game_mode == GameMode::Creative) {
+            tracing::warn!("Player {} ({}) moved too quickly! (x: {}, y: {}, z: {})", self.username, self.uuid, relative.x(), relative.y(), relative.z());
+            self.teleport(relative);
+        } else {
+            if relative.x() as i32 / 16 != self.chunk_x ||
+                relative.z() as i32 / 16 != self.chunk_z {
+                let old_chunk_x = self.chunk_x;
+                let old_chunk_z = self.chunk_z;
+
+                self.chunk_x = relative.x() as i32 / 16;
+                self.chunk_z = relative.z() as i32 / 16;
+
+                self.add_packet(SetCenterChunk {
+                    x: VarInt(self.chunk_x),
+                    z: VarInt(self.chunk_z)
+                });
+
+                let loaded_chunks = ((old_chunk_x - self.view_distance as i32)..=(old_chunk_x + self.view_distance as i32))
+                    .into_iter()
+                    .flat_map(|x| ((old_chunk_z - self.view_distance as i32)..=(old_chunk_z + self.view_distance as i32)).map(move |z| (x, z)))
+                    .collect::<Vec<_>>();
+                let new_chunks = ((self.chunk_x - self.view_distance as i32)..=(self.chunk_x + self.view_distance as i32))
+                    .into_iter()
+                    .flat_map(|x| ((self.chunk_z - self.view_distance as i32)..=(self.chunk_z + self.view_distance as i32)).map(move |z| (x, z)))
+                    .collect::<Vec<_>>();
+
+                let unload_chunks = new_chunks
+                    .iter()
+                    .collect::<HashSet<_>>();
+
+                let unload_chunks = loaded_chunks
+                    .iter()
+                    .filter(|v| unload_chunks.contains(v))
+                    .collect::<Vec<_>>();
+
+                let load_chunks = loaded_chunks
+                    .iter()
+                    .collect::<HashSet<_>>();
+
+                let load_chunks = new_chunks
+                    .iter()
+                    .filter(|v| load_chunks.contains(v))
+                    .collect::<Vec<_>>();
+
+                tracing::debug!("Loaded chunks: {:?}", load_chunks);
+                tracing::debug!("Unloaded chunks: {:?}", unload_chunks);
+
+                for (chunk_x, chunk_z) in unload_chunks {
+                    self.add_packet(UnloadChunk {
+                        chunk_x: *chunk_x,
+                        chunk_z: *chunk_z,
+                    })
+                }
+
+                let chunk = Chunk::flat_generation();
+
+                for (chunk_x, chunk_z) in load_chunks {
+                    self.add_packet::<ChunkDataAndUpdateLight>((&ChunkPosition { x: *chunk_x, z: *chunk_z }, &chunk).into())
+                }
+            }
+
+            self.location = relative;
+        }
+    }
+
+    fn move_absolute(&mut self, absolute: Location) {
+        self.move_relative(absolute)
+    }
+
+    fn teleport(&mut self, location: Location) {
+        self.teleport_requests.push((TeleportID { id: VarInt(random()) }, location, true));
+    }
+}
+impl Nameable for Player {
+    fn name(&self) -> &str {
+        self.username.as_str()
+    }
+
+    fn display_name(&self) -> &str {
+        self.display_name.as_str()
+    }
+
+    fn set_display_name(&mut self, display_name: impl Into<String>) {
+        self.display_name = display_name.into()
+    }
+}
+impl Disconnectable for Player {
+    fn kick(&mut self, message: impl Into<text_component::Component>) {
+        let message = message.into();
+        let component: NBT = message.into();
+
+        match self.connection.state {
+            PlayerState::LOGIN => {
+                self.add_packet(LoginDisconnect { component })
+            },
+            PlayerState::CONFIGURATION => {
+                self.add_packet(ConfigurationDisconnect { component })
+            },
+            PlayerState::PLAY => {
+                self.add_packet(PlayDisconnect { component })
+            }
+            _ => {
+                tracing::warn!("Attempted to kick player {} but the connection was in a state that doesn't allow kick packets.", self.name())
+            }
+        }
+    }
+}
+
+impl Entity for Player {
+
 }
 
 #[repr(i8)]

@@ -1,10 +1,11 @@
 use std::convert::Into;
 use json::JsonValue;
-use shipyard::{AddComponent, Get, Remove, View, ViewMut};
+use shipyard::{AddComponent, Get, Remove, ViewMut};
 use fe2o3_nbt::NBT;
 use packet::{ByteArrayInferredLength, Identifier, VarInt};
 use packet_proc::{outgoing, packet, packet_handler, state_changing, Deserializable, Serializable};
 use text_component::{Component, TextColor};
+use crate::game::entities::{Disconnectable, Nameable, Positionable};
 use crate::game::entities::player::{GameMode, MainHand, Player};
 use crate::game::Location;
 use crate::game::world::chunk::{Chunk, ChunkPosition};
