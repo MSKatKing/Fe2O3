@@ -1,0 +1,10 @@
+[package]
+name = "example-mod"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["dylib"]
+
+[dependencies]
+fe2o3-api = { path = "../fe2o3-api" }

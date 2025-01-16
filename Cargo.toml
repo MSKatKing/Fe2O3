@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = ["fe2o3_nbt", "mem-helper", "packet", "packet-proc", "text-component"]
+members = ["example-mod", "fe2o3-api", "fe2o3_nbt", "mem-helper", "packet", "packet-proc", "text-component"]
 
 [dependencies]
+fe2o3-api = { path = "fe2o3-api" }
+libloading = "0.8.6"
 shipyard = "0.7.5"
 uuid = "1.12.0"
 packet = { path = "packet" }

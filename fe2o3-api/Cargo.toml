@@ -1,0 +1,18 @@
+[package]
+name = "fe2o3-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+shipyard = "=0.7.5"
+
+# These are needed to ensure that any plugins have the same TypeIds as the core program. For some reason these dependencies
+# cause the core program to rebuild this crate with slightly different versions of once_cell? so these are needed here to standardize that version.
+tracing = {  version = "0.1.41" }
+chrono = "0.4.38"
+tracing-subscriber = { version = "0.3.19", features = ["default", "chrono"] }
+
+# The above are exposed to plugins to use for logging out of the box, but packets cannot be created. Instead, the only part of the packet library exposed here is for
+# plugin channel packets.
+packet = { path = "../packet" }
+packet-proc = { path = "../packet-proc" }

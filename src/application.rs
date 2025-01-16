@@ -2,7 +2,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use shipyard::World;
 use crate::status_tags::Shutdown;
-use crate::workloads;
+use crate::{plugins, workloads};
 
 pub struct Application {
     ecs_world: World
@@ -25,6 +25,8 @@ impl Application {
 
         ecs_world.run_workload(workloads::startup)
             .expect("Failed to execute startup workload");
+
+        plugins::load_mods(&ecs_world);
 
         tracing::info!("Server startup successful!");
 

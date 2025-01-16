@@ -6,6 +6,7 @@ mod status_tags;
 mod networking;
 mod game;
 mod settings;
+pub mod plugins;
 
 use std::{fs, io};
 use std::fs::OpenOptions;
