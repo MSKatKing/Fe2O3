@@ -13,7 +13,7 @@ use crate::networking::packet::{add_outgoing_packet, Bus, OutgoingPacket};
 use crate::networking::packet::play::{ChunkDataAndUpdateLight, GameEvent, PlayLogin, PlayerAbilities};
 use crate::networking::player::{Connection, PlayerState};
 
-#[packet(0)]
+#[packet(id = 0)]
 pub struct ClientInformation {
     pub locale: String,
     pub view_distance: i8,
@@ -24,7 +24,7 @@ pub struct ClientInformation {
     pub allow_server_listing: bool
 }
 
-#[packet_handler(ClientInformation)]
+#[packet_handler(packet = ClientInformation)]
 fn handler(mut vm_self: ViewMut<ClientInformation>, mut vm_outgoing: ViewMut<Bus<OutgoingPacket>>, mut vm_connections: ViewMut<Connection>, mut vm_players: ViewMut<Player>) {
     for (id, info) in vm_self.drain().with_id() {
         let mut player = (&mut vm_connections).remove(id)
@@ -43,13 +43,13 @@ fn handler(mut vm_self: ViewMut<ClientInformation>, mut vm_outgoing: ViewMut<Bus
     }
 }
 
-#[packet(2)]
+#[packet(id = 2)]
 pub struct PluginMessage {
     pub channel: Identifier,
     pub data: ByteArrayInferredLength
 }
 
-#[packet_handler(PluginMessage)]
+#[packet_handler(packet = PluginMessage)]
 fn handler(mut vm_self: ViewMut<PluginMessage>, mut vm_players: ViewMut<Player>) {
     for (id, msg) in vm_self.drain().with_id() {
         let mut player = (&mut vm_players).get(id)
@@ -64,11 +64,10 @@ fn handler(mut vm_self: ViewMut<PluginMessage>, mut vm_players: ViewMut<Player>)
     }
 }
 
-#[packet(3)]
+#[packet(id = 3)]
 pub struct AcknowledgeFinishConfiguration;
 
-#[packet_handler(AcknowledgeFinishConfiguration)]
-#[state_changing]
+#[packet_handler(packet = AcknowledgeFinishConfiguration, state_changing)]
 fn handler(mut vm_self: ViewMut<AcknowledgeFinishConfiguration>, mut vm_outgoing: ViewMut<Bus<OutgoingPacket>>, mut vm_players: ViewMut<Player>) {
     for (id, _) in vm_self.drain().with_id() {
         let mut player = (&mut vm_players).get(id)
@@ -122,41 +121,37 @@ fn handler(mut vm_self: ViewMut<AcknowledgeFinishConfiguration>, mut vm_outgoing
     }
 }
 
-#[packet(0x05)]
+#[packet(id = 0x05)]
 pub struct ConfigurationPong {
     id: i32
 }
 
-#[packet_handler(ConfigurationPong)]
-fn handle(mut vm_self: ViewMut<ConfigurationPong>, mut vm_players: ViewMut<Player>, v_connection: View<Connection>) {
+#[packet_handler(packet = ConfigurationPong)]
+fn handle(mut vm_self: ViewMut<ConfigurationPong>, mut vm_players: ViewMut<Player>) {
     for (id, info) in vm_self.drain().with_id() {
         let mut player = (&mut vm_players).get(id)
             .expect("Player should exist");
 
         if info.id != player.last_keep_alive_id {
-            player.kick(text_component::Component::new_with_color("Ping response id was not the same as the sent request's id!", TextColor::Red))
+            player.kick(Component::new_with_color("Ping response id was not the same as the sent request's id!", TextColor::Red))
         }
     }
 }
 
-#[packet(0x02)]
-#[outgoing]
+#[packet(id = 0x02, outgoing)]
 pub struct ConfigurationDisconnect {
-    pub component: Component
+    pub component: NBT
 }
 
-#[packet(3)]
-#[outgoing]
+#[packet(id = 3, outgoing)]
 pub struct FinishConfiguration;
 
-#[packet(0x05)]
-#[outgoing]
+#[packet(id = 0x05, outgoing)]
 pub struct ConfigurationPing {
     pub id: i32
 }
 
-#[packet(0x07)]
-#[outgoing]
+#[packet(id = 0x07, outgoing)]
 pub struct RegistryData {
     registry_id: Identifier,
     entries: Vec<RegistryEntry>

@@ -2,7 +2,7 @@ mod handlers;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, ItemStruct, AttributeArgs, NestedMeta, Lit, Fields, Token, Ident, LitStr, DeriveInput, ItemFn};
+use syn::{parse_macro_input, ItemStruct, Lit, Fields, Token, Ident, LitStr, DeriveInput, ItemFn, LitInt};
 use syn::parse::ParseStream;
 use syn::punctuated::Punctuated;
 use crate::handlers::list_handlers_in_module;
@@ -20,29 +20,43 @@ pub fn state_changing(_: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn packet_handler(attr: TokenStream, item: TokenStream) -> TokenStream {
     let item = parse_macro_input!(item as ItemFn);
-    let attr = parse_macro_input!(attr as AttributeArgs);
-
-    if let Some(struct_name) = attr.first() {
-        let inputs = &item.sig.inputs;
-        let block = &item.block;
-
-        let state_changing = if item.attrs.iter().any(|attr| attr.path.is_ident("state_changing")) {
-            quote!(#[state_changing])
+    let mut state_changing = false;
+    let mut packet: Option<Ident> = None;
+    let parser = syn::meta::parser(|a| {
+        if a.path.is_ident("state_changing") {
+            state_changing = true;
+            Ok(())
+        } else if a.path.is_ident("packet") {
+            packet = Some(a.value()?.parse()?);
+            Ok(())
         } else {
-            quote!()
-        };
+            Err(a.error("Unknown packet handler property"))
+        }
+    });
+    parse_macro_input!(attr with parser);
 
-        quote! {
-            impl #struct_name {
-                #state_changing
-                pub(crate) fn __generated_packet_handler(#inputs) #block
-            }
-        }
+    if packet.is_none() {
+        panic!("Packet type isn't specified!");
+    }
+
+    let packet = packet.unwrap();
+    let inputs = &item.sig.inputs;
+    let block = &item.block;
+
+    let state_changing = if state_changing {
+        quote! { #[state_changing] }
     } else {
-        quote! {
-            #item
+        quote! {}
+    };
+
+    let out = quote! {
+        impl #packet {
+            #state_changing
+            pub(crate) fn __generated_packet_handler(#inputs) #block
         }
-    }.into()
+    };
+
+    out.into()
 }
 
 #[proc_macro_derive(Serializable)]
@@ -145,12 +159,12 @@ fn list_structs_in_module(module_path: &str) -> Vec<Ident> {
         .filter_map(|item| {
             if let syn::Item::Struct(s) = item {
                 let has_outgoing = s.attrs.iter().any(|attr| {
-                    attr.path.is_ident("outgoing")
+                    attr.path().is_ident("outgoing")
                 });
 
                 if !has_outgoing {
                     let is_packet = s.attrs.iter().any(|attr| {
-                        attr.path.is_ident("packet")
+                        attr.path().is_ident("packet")
                     });
 
                     if is_packet {
@@ -194,8 +208,6 @@ pub fn add_packet_fn(input: TokenStream) -> TokenStream {
             packet_arms.push(quote! {
                 #struct_name::ID => {
                     let p = #struct_name::from_buffer(packet.data);
-
-                    tracing::debug!("Added packet {}", stringify!(#struct_name));
 
                     // bus here
 
@@ -278,19 +290,42 @@ pub fn add_packet_fn(input: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn packet(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let args = parse_macro_input!(attr as AttributeArgs);
+    let mut id: Option<LitInt> = None;
+    let mut outgoing = false;
+    let parser = syn::meta::parser(|meta| {
+        if meta.path.is_ident("id") {
+            if let Some(Lit::Int(pid)) = meta.value()?.parse()? {
+                id = Some(pid);
+                Ok(())
+            } else {
+                Err(meta.error("Failed to parse packet id!"))
+            }
+        } else if meta.path.is_ident("outgoing") {
+            outgoing = true;
+            Ok(())
+        } else {
+            Err(meta.error("Expected only a packet id!"))
+        }
+    });
+    parse_macro_input!(attr with parser);
     let input = parse_macro_input!(item as ItemStruct);
 
-    let id = match args.first() {
-        Some(NestedMeta::Lit(Lit::Int(id))) => match id.base10_parse::<usize>() {
-            Ok(id) => id,
-            Err(_) => panic!("Cannot parse id as a usize in #[packet(id)]!")
-        },
-        _ => panic!("Expected #[packet(id)] where id is a usize")
-    };
+    if id.is_none() {
+        panic!("No id field on packet!");
+    }
+
+    let id = id.unwrap();
 
     let struct_name = input.ident.clone();
     let struct_attrs = input.attrs.clone();
+
+    let outgoing = if outgoing {
+        quote! {
+            #[outgoing]
+        }
+    } else {
+        quote! {}
+    };
 
     let expanded = match input.fields {
         Fields::Named(ref fields) => {
@@ -303,7 +338,7 @@ pub fn packet(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             let serialize_fields = fields.named.iter().map(|field| {
                 let field_name = &field.ident;
-                if field.attrs.iter().any(|attr| attr.path.is_ident("compressed_int")) {
+                if field.attrs.iter().any(|attr| attr.path().is_ident("compressed_int")) {
                     quote! {
                         buffer.write(packet::VarInt(self.#field_name));
                     }
@@ -316,7 +351,7 @@ pub fn packet(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             let deserialize_fields = fields.named.iter().map(|field| {
                 let field_name = &field.ident;
-                if field.attrs.iter().any(|attr| attr.path.is_ident("compressed_int")) {
+                if field.attrs.iter().any(|attr| attr.path().is_ident("compressed_int")) {
                     quote! {
                         let #field_name = buffer.read::<packet::VarInt>().0;
                     }
@@ -349,6 +384,7 @@ pub fn packet(attr: TokenStream, item: TokenStream) -> TokenStream {
             #(
                 #struct_attrs
             )*
+            #outgoing
             #input
             }
         },
@@ -369,6 +405,7 @@ pub fn packet(attr: TokenStream, item: TokenStream) -> TokenStream {
             #(
                 #struct_attrs
             )*
+            #outgoing
             #input
             }
     };

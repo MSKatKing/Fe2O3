@@ -1,19 +1,19 @@
 use shipyard::{Get, ViewMut};
 use uuid::Uuid;
+use fe2o3_nbt::NBT;
 use packet::{ByteArrayInferredLength, Identifier, VarInt};
 use packet_proc::{outgoing, packet, packet_handler, state_changing};
-use text_component::Component;
 use crate::networking::packet::{add_outgoing_packet, Bus, OutgoingPacket};
 use crate::networking::packet::configuration::RegistryData;
 use crate::networking::player::{Connection, PlayerState};
 
-#[packet(0)]
+#[packet(id = 0)]
 pub struct LoginStart {
     pub name: String,
     pub uuid: Uuid
 }
 
-#[packet_handler(LoginStart)]
+#[packet_handler(packet = LoginStart)]
 fn handler(mut vm_self: ViewMut<LoginStart>, mut vm_outgoing: ViewMut<Bus<OutgoingPacket>>, mut vm_players: ViewMut<Connection>) {
     for (id, login_start) in vm_self.drain().with_id() {
         let username = login_start.name;
@@ -41,24 +41,23 @@ fn handler(mut vm_self: ViewMut<LoginStart>, mut vm_outgoing: ViewMut<Bus<Outgoi
     }
 }
 
-#[packet(1)]
+#[packet(id = 1)]
 pub struct EncryptionResponse {
     pub shared_secret: Vec<u8>,
     pub shared_token: Vec<u8>,
 }
 
-#[packet(2)]
+#[packet(id = 2)]
 pub struct LoginPluginResponse {
     pub message_id: VarInt,
     pub successful: bool,
     pub data: ByteArrayInferredLength
 }
 
-#[packet(3)]
+#[packet(id = 3)]
 pub struct LoginAcknowledged;
 
-#[packet_handler(LoginAcknowledged)]
-#[state_changing]
+#[packet_handler(packet = LoginAcknowledged, state_changing)]
 fn handler(mut vm_self: ViewMut<LoginAcknowledged>, mut vm_outgoing: ViewMut<Bus<OutgoingPacket>>, mut vm_players: ViewMut<Connection>) {
     for (id, _) in vm_self.drain().with_id() {
         let mut player = (&mut vm_players).get(id)
@@ -83,19 +82,19 @@ fn handler(mut vm_self: ViewMut<LoginAcknowledged>, mut vm_outgoing: ViewMut<Bus
     }
 }
 
-#[packet(4)]
+#[packet(id = 4)]
 pub struct LoginCookieResponse {
     pub key: Identifier,
     pub payload: Option<Vec<u8>>
 }
 
-#[packet(0x00)]
+#[packet(id = 0x00)]
 #[outgoing]
 pub struct LoginDisconnect {
-    pub component: Component
+    pub component: NBT
 }
 
-#[packet(0x01)]
+#[packet(id = 0x01)]
 #[outgoing]
 pub struct EncryptionRequest {
     pub server_id: String,
@@ -104,7 +103,7 @@ pub struct EncryptionRequest {
     pub should_auth: bool
 }
 
-#[packet(0x02)]
+#[packet(id = 0x02)]
 #[outgoing]
 pub struct LoginSuccess {
     pub uuid: Uuid,
@@ -113,13 +112,13 @@ pub struct LoginSuccess {
     pub strict_error_handling: bool
 }
 
-#[packet(0x03)]
+#[packet(id = 0x03)]
 #[outgoing]
 pub struct SetCompression {
     pub threshold: VarInt
 }
 
-#[packet(0x04)]
+#[packet(id = 0x04)]
 #[outgoing]
 pub struct PluginRequest {
     pub id: VarInt,
@@ -127,7 +126,7 @@ pub struct PluginRequest {
     pub data: ByteArrayInferredLength
 }
 
-#[packet(0x05)]
+#[packet(id = 0x05)]
 #[outgoing]
 pub struct CookieRequest {
     pub key: Identifier

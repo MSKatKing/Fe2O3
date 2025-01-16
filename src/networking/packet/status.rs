@@ -7,10 +7,10 @@ use crate::networking::player::{Connection, PlayerState};
 pub const VERSION_NAME: &str = "1.21.1";
 pub const PROTOCOL_VERSION: usize = 767;
 
-#[packet(0)]
+#[packet(id = 0)]
 pub struct StatusRequest;
 
-#[packet_handler(StatusRequest)]
+#[packet_handler(packet = StatusRequest)]
 fn handler(mut vm_self: ViewMut<StatusRequest>, mut vm_outgoing: ViewMut<Bus<OutgoingPacket>>, vm_players: ViewMut<Connection>) {
     let mut current_players = 0usize;
     for p in vm_players.iter() {
@@ -28,12 +28,12 @@ fn handler(mut vm_self: ViewMut<StatusRequest>, mut vm_outgoing: ViewMut<Bus<Out
     }
 }
 
-#[packet(1)]
+#[packet(id = 1)]
 pub struct StatusPingRequest {
     pub timestamp: u64
 }
 
-#[packet_handler(StatusPingRequest)]
+#[packet_handler(packet = StatusPingRequest)]
 fn handler(mut vm_self: ViewMut<StatusPingRequest>, mut vm_outgoing: ViewMut<Bus<OutgoingPacket>>) {
     for (id, request) in vm_self.drain().with_id() {
         let out = StatusPongResponse {
@@ -44,7 +44,7 @@ fn handler(mut vm_self: ViewMut<StatusPingRequest>, mut vm_outgoing: ViewMut<Bus
     }
 }
 
-#[packet(0)]
+#[packet(id = 0)]
 #[outgoing]
 pub struct StatusResponse {
     pub response: String
@@ -59,7 +59,7 @@ impl StatusResponse {
     }
 }
 
-#[packet(1)]
+#[packet(id = 1)]
 #[outgoing]
 pub struct StatusPongResponse {
     pub timestamp: u64

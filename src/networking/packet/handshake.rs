@@ -1,9 +1,10 @@
+use packet_proc::state_changing;
 use shipyard::{Get, ViewMut};
 use packet::VarInt;
-use packet_proc::{packet, packet_handler, state_changing};
+use packet_proc::{packet, packet_handler};
 use crate::networking::player::{Connection, PlayerState};
 
-#[packet(0)]
+#[packet(id = 0)]
 pub struct Handshake {
     pub protocol_version: VarInt,
     pub address: String,
@@ -11,8 +12,7 @@ pub struct Handshake {
     pub next_state: PlayerState
 }
 
-#[packet_handler(Handshake)]
-#[state_changing]
+#[packet_handler(packet = Handshake, state_changing)]
 fn handler(mut vm_self: ViewMut<Handshake>, mut vm_players: ViewMut<Connection>) {
     for (id, handshake) in vm_self.drain().with_id() {
         let mut player = (&mut vm_players).get(id)
