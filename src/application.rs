@@ -1,8 +1,10 @@
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 use shipyard::World;
-use crate::status_tags::Shutdown;
+use fe2o3_api::control::ShutdownRequest;
 use crate::{plugins, workloads};
+use crate::plugins::{plugin_shutdown_workloads, plugin_update_workloads};
 
 pub struct Application {
     ecs_world: World
@@ -26,6 +28,7 @@ impl Application {
         ecs_world.run_workload(workloads::startup)
             .expect("Failed to execute startup workload");
 
+        tracing::info!("Loading plugins...");
         plugins::load_mods(&ecs_world);
 
         tracing::info!("Server startup successful!");
@@ -39,7 +42,7 @@ impl Application {
         const TARGET_TICK_DURATION: Duration = Duration::from_millis(1000 / 20);
 
         loop {
-            if self.ecs_world.get_unique::<&Shutdown>().is_ok() {
+            if self.ecs_world.get_unique::<&ShutdownRequest>().is_ok() {
                 break;
             }
 
@@ -47,6 +50,8 @@ impl Application {
 
             self.ecs_world.run_default_workload()
                 .expect("Failed to run tick workload");
+
+            plugin_update_workloads(&self.ecs_world);
 
             let tick_duration = start_time.elapsed();
 
@@ -62,6 +67,10 @@ impl Application {
                 }
             }
         }
+
+        tracing::info!("Shutting down...");
+
+        plugin_shutdown_workloads(&self.ecs_world);
 
         self.ecs_world.run_workload(workloads::shutdown)
             .expect("Failed to run workload shutdown");

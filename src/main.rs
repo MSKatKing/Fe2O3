@@ -2,7 +2,6 @@
 
 mod application;
 mod workloads;
-mod status_tags;
 mod networking;
 mod game;
 mod settings;

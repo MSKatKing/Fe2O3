@@ -1,20 +1,34 @@
-use std::any::TypeId;
-use fe2o3_api::shipyard::{IntoWorkload, UniqueView, UniqueViewMut, Workload};
-use fe2o3_api::ExperimentalStruct;
-use fe2o3_api::tracing;
+use fe2o3_api::shipyard::{AllStoragesView, IntoWorkload, Workload};
+use fe2o3_api::control::shutdown;
 
-#[unsafe(no_mangle)]
+#[no_mangle]
+pub fn get_id() -> &'static str {
+    "experimental_mod"
+}
+
+#[no_mangle]
 pub fn startup_workload() -> Workload {
     (
-        test,
-        test_experimental,
+        MyMod::on_load,
     ).into_sequential_workload()
 }
 
-fn test() {
-    tracing::info!("{:?}", TypeId::of::<ExperimentalStruct>());
+#[no_mangle]
+pub fn shutdown_workload() -> Workload {
+    (
+        MyMod::on_shutdown,
+    ).into_sequential_workload()
 }
 
-fn test_experimental(mut test: UniqueViewMut<ExperimentalStruct>) {
-    test.added_by = "Experimental".into();
+pub struct MyMod;
+
+impl MyMod {
+    fn on_load(storages: AllStoragesView) {
+        shutdown(storages);
+        println!("shutdown requested!");
+    }
+
+    fn on_shutdown() {
+        println!("Goodbye!");
+    }
 }

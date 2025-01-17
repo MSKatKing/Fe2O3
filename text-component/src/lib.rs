@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use fe2o3_nbt::{compound_nbt, NBT};
 use packet::{Buffer, Deserializable, Serializable};
 
 pub struct Component {
@@ -153,5 +154,15 @@ impl Display for TextStyle {
             TextStyle::Underline => write!(f, "underline"),
             TextStyle::Italic => write!(f, "italic")
         }
+    }
+}
+
+impl Into<NBT> for Component {
+    fn into(self) -> NBT {
+        let mut nbt = NBT::new(true);
+
+        nbt.write_tag("", compound_nbt!()); //TODO: this
+
+        nbt
     }
 }

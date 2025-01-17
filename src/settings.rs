@@ -35,7 +35,7 @@ impl ServerSettings {
 
     pub fn save(&self) {
         let toml_string = toml::to_string(self).expect("Failed to save config to string");
-        let mut file = OpenOptions::new().create_new(true).write(true).open("config.toml").expect("Failed to open config file");
+        let mut file = OpenOptions::new().create(true).write(true).open("config.toml").expect("Failed to open config file");
         file.write_all(toml_string.as_bytes()).expect("Failed to write to config file");
     }
 }

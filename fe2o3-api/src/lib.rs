@@ -1,6 +1,6 @@
-mod experimental;
+pub mod experimental;
+pub mod control;
 
-pub use experimental::*;
 pub use shipyard;
 pub use tracing;
 pub use tracing_subscriber;

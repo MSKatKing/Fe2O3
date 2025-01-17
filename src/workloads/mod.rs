@@ -3,9 +3,8 @@ mod shutdown;
 mod tick;
 
 use shipyard::{AllStoragesView, IntoWorkload, Workload};
-use fe2o3_api::ExperimentalStruct;
+use fe2o3_api::experimental::ExperimentalStruct;
 use crate::networking::packet::packet_handlers;
-use crate::plugins::plugin_update_workloads;
 
 pub fn startup() -> Workload {
     use startup::*;
@@ -45,7 +44,5 @@ pub fn tick() -> Workload {
         handle_unsent_player_packets,
 
         handle_networking_outgoing,
-
-        plugin_update_workloads,
     ).into_sequential_workload()
 }
