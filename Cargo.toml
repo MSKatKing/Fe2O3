@@ -1,0 +1,11 @@
+[package]
+name = "Fe2O3"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+members = [ "data" ]
+
+[workspace.dependencies]
+serde = "1.0.217"
+bincode = "1.3.3"
