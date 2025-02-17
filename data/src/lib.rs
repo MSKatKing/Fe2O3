@@ -1,6 +1,8 @@
 pub mod nbt;
-mod queue;
-mod text;
+pub mod queue;
+pub mod text;
+pub mod resource;
+pub mod transform;
 
 #[cfg(test)]
 mod tests {
@@ -21,7 +23,7 @@ mod tests {
     #[test]
     fn test_nbt_read() {
         let bytes = fs::read("test_files/test_read.nbt").expect("failed");
-        let nbt = NBT::from_bytes(bytes, false).expect("fad");
+        let nbt = NBT::from_bytes_disk(bytes, false).expect("fad");
 
         assert_eq!(nbt, NBT::new("hello world", NBTTag::Compound(vec![("name".to_string(), NBTTag::String("Bananramas".to_string())), ("my bytes".to_string(), NBTTag::ByteArray(vec![0, 0, 0, 0, 0, 0])), ("10000".to_string(), NBTTag::Short(10000))])))
     }

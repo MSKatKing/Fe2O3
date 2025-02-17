@@ -62,3 +62,9 @@ impl<T: Into<Vec<u8>>> From<T> for Queue {
         }
     }
 }
+
+impl Into<Vec<u8>> for Queue {
+    fn into(self) -> Vec<u8> {
+        self.data.to_vec()
+    }
+}

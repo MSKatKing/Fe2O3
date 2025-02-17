@@ -51,7 +51,17 @@ impl NBT {
         out
     }
 
-    pub fn from_bytes(bytes: impl Into<Vec<u8>>, network: bool) -> Option<Self> {
+    pub fn from_bytes_network(queue: &mut Queue) -> Option<Self> {
+        let id = queue.pop::<u8>().expect("");
+        let mut name = None;
+
+        Some(Self {
+            root_name: name,
+            root_tag: NBTTag::from_bytes(queue, id).expect(""),
+        })
+    }
+
+    pub fn from_bytes_disk(bytes: impl Into<Vec<u8>>) -> Option<Self> {
         let mut bytes = bytes.into();
         if bytes.starts_with(&[0x1F, 0x8B]) {
             let copied = bytes.clone();
@@ -71,10 +81,8 @@ impl NBT {
         let id = queue.pop::<u8>().expect("");
         let mut name = None;
 
-        if !network {
-            let name_len = queue.pop::<u16>().expect("") as usize;
-            name = Some(queue.pop_str(name_len).expect(""));
-        }
+        let name_len = queue.pop::<u16>().expect("") as usize;
+        name = Some(queue.pop_str(name_len).expect(""));
 
         Some(Self {
             root_name: name,
