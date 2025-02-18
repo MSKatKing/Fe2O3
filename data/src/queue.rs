@@ -42,6 +42,24 @@ impl Queue {
         Some(T::from_be_bytes(&value.to_le_bytes().into()))
     }
 
+    pub fn peek<T: ToBytes + FromBytes>(&mut self) -> Option<T> where <T as FromBytes>::Bytes: From<<T as ToBytes>::Bytes> {
+        if size_of::<T>() > self.bytes_left() {
+            return None;
+        }
+
+        let value = unsafe {
+            let mut value = mem::zeroed::<T>();
+            std::ptr::copy_nonoverlapping(
+                self.data.as_ptr().add(self.cursor),
+                &mut value as *mut T as *mut u8,
+                size_of::<T>()
+            );
+            value
+        };
+
+        Some(T::from_be_bytes(&value.to_le_bytes().into()))
+    }
+
     pub fn pop_str(&mut self, len: usize) -> Option<String> {
         let mut bytes = vec![0u8; len];
         for b in &mut bytes {
@@ -65,6 +83,6 @@ impl<T: Into<Vec<u8>>> From<T> for Queue {
 
 impl Into<Vec<u8>> for Queue {
     fn into(self) -> Vec<u8> {
-        self.data.to_vec()
+        self.data[self.cursor..].to_vec()
     }
 }

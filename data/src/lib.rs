@@ -3,6 +3,7 @@ pub mod queue;
 pub mod text;
 pub mod resource;
 pub mod transform;
+pub mod network;
 
 #[cfg(test)]
 mod tests {

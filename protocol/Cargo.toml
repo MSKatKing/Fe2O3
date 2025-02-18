@@ -7,3 +7,4 @@ edition = "2021"
 data = { path = "../data" }
 uuid = { workspace = true }
 shipyard = { workspace = true }
+protocol_proc = { path = "protocol_proc" }
